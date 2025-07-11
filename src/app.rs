@@ -1,8 +1,7 @@
 use crate::pane::Pane;
-
+use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::{Block, Borders},
 };
@@ -12,6 +11,7 @@ pub struct App {
     pub panes: HashMap<u8, Pane>,
     pub focused: u8,
     pub next_id: u8,
+    pub command_buffer: String,
 }
 
 impl App {
@@ -22,6 +22,7 @@ impl App {
             panes,
             focused: 0,
             next_id: 1,
+            command_buffer: String::new(),
         }
     }
 
@@ -53,7 +54,7 @@ impl App {
             )
             .split(f.size());
 
-        for ((&id, _pane), area) in self.panes.iter().zip(chunks.iter()) {
+        for ((&id, pane), area) in self.panes.iter().zip(chunks.iter()) {
             let block = Block::default()
                 .title(format!("Pane {}", id))
                 .borders(Borders::ALL)
@@ -63,7 +64,15 @@ impl App {
                     Style::default()
                 });
 
-            f.render_widget(block, *area);
+            let mut output = pane.get_output();
+            // if id == self.focused {
+            //     output.push_str(&self.command_buffer);
+            // }
+            let paragraph = Paragraph::new(output)
+                .block(block)
+                .wrap(Wrap { trim: false });
+
+            f.render_widget(paragraph, *area);
         }
     }
 }

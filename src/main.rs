@@ -1,66 +1,55 @@
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use std::io::{Read, Write};
-use std::thread;
+mod app;
+mod pane;
+mod terminal;
+
+use app::App;
+use terminal::{restore_terminal, setup_terminal};
+
+use crossterm::event::{self, Event, KeyCode};
+use std::time::{Duration, Instant};
 
 fn main() -> anyhow::Result<()> {
-    // 1. Setup PTY system
-    let pty_system = NativePtySystem::default();
+    let mut terminal = setup_terminal()?;
+    let mut app = App::new();
+    let tick_rate = Duration::from_millis(200);
+    let mut last_tick = Instant::now();
+    loop {
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
 
-    // 2. Create a new PTY pair (master/slave)
-    let pair = pty_system.openpty(PtySize {
-        rows: 30,
-        cols: 100,
-        pixel_width: 0,
-        pixel_height: 0,
-    })?;
-
-    // 3. Spawn a shell inside the PTY slave
-    let cmd = if cfg!(target_os = "windows") {
-        CommandBuilder::new("powershell.exe") // or "cmd.exe"
-    } else {
-        CommandBuilder::new("bash")
-    };
-
-    let mut child = pair.slave.spawn_command(cmd)?;
-    let mut reader = pair.master.try_clone_reader()?;
-    let mut writer = pair.master.take_writer()?;
-
-    // 4. Pipe stdout from shell to terminal
-    thread::spawn(move || {
-        let mut buffer = [0u8; 8192];
-        let stdout = std::io::stdout();
-        let mut stdout_lock = stdout.lock();
-
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break, // EOF
-                Ok(n) => {
-                    let _ = stdout_lock.write_all(&buffer[..n]);
-                    let _ = stdout_lock.flush();
+        // Non-blocking input check
+        if event::poll(timeout)? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') => {
+                        restore_terminal()?;
+                        break;
+                    }
+                    KeyCode::Char('v') => app.split_vertical(),
+                    KeyCode::Tab => app.switch_focus(),
+                    KeyCode::Char(c) => app.command_buffer.push(c),
+                    KeyCode::Backspace => {
+                        app.command_buffer.pop();
+                    }
+                    KeyCode::Enter => {
+                        if let Some(pane) = app.panes.get(&app.focused) {
+                            let line = app.command_buffer.clone() + "\n";
+                            pane.send_input(line.as_bytes());
+                            app.command_buffer.clear();
+                        }
+                    }
+                    _ => {}
                 }
-                Err(_) => break,
             }
         }
-    });
 
-    // 5. Pipe input from user to shell
-    let stdin = std::io::stdin();
-    let mut stdin_lock = stdin.lock();
-    let mut input_buffer = [0u8; 8192];
-
-    loop {
-        match stdin_lock.read(&mut input_buffer) {
-            Ok(0) => break,
-            Ok(n) => {
-                let _ = writer.write_all(&input_buffer[..n]);
-                let _ = writer.flush();
-            }
-            Err(_) => break,
+        // ✅ Always redraw after input or timeout
+        if last_tick.elapsed() >= tick_rate {
+            terminal.draw(|f| app.draw(f))?;
+            last_tick = Instant::now();
         }
     }
-
-    // 6. Wait for child to exit
-    let _ = child.wait()?;
 
     Ok(())
 }
