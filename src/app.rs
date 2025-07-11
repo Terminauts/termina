@@ -12,6 +12,7 @@ pub struct App {
     pub focused: u8,
     pub next_id: u8,
     pub command_buffer: String,
+    pub status: String,
 }
 
 impl App {
@@ -23,6 +24,8 @@ impl App {
             focused: 0,
             next_id: 1,
             command_buffer: String::new(),
+
+            status: String::from("Press 'v' to split | Tab to switch | q to quit"),
         }
     }
 
@@ -45,6 +48,15 @@ impl App {
     }
 
     pub fn draw(&self, f: &mut ratatui::Frame) {
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(f.size());
+
+        let pane_area = layout[0];
+        let status_area = layout[1];
+
+        // Split pane_area horizontally for each pane
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(
@@ -52,7 +64,7 @@ impl App {
                     .map(|_| Constraint::Percentage(100 / self.panes.len() as u16))
                     .collect::<Vec<_>>(),
             )
-            .split(f.size());
+            .split(pane_area);
 
         for ((&id, pane), area) in self.panes.iter().zip(chunks.iter()) {
             let block = Block::default()
@@ -64,15 +76,18 @@ impl App {
                     Style::default()
                 });
 
-            let mut output = pane.get_output();
-            // if id == self.focused {
-            //     output.push_str(&self.command_buffer);
-            // }
+            let output = pane.get_output();
             let paragraph = Paragraph::new(output)
                 .block(block)
-                .wrap(Wrap { trim: false });
+                .wrap(Wrap { trim: true });
 
             f.render_widget(paragraph, *area);
         }
+
+        // ✅ Draw status bar
+        let status = Paragraph::new(self.status.clone())
+            .style(Style::default().bg(Color::Blue).fg(Color::White));
+
+        f.render_widget(status, status_area);
     }
 }
