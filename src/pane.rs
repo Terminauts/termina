@@ -10,6 +10,8 @@ pub struct Pane {
     pub pty: PtyPair,
     pub writer: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
     pub buffer: Arc<Mutex<Vec<String>>>,
+    pub history: Arc<Mutex<Vec<String>>>,
+    pub history_index: Arc<Mutex<Option<usize>>>,
 }
 
 impl Pane {
@@ -55,6 +57,8 @@ impl Pane {
             pty,
             writer: Arc::new(Mutex::new(writer)),
             buffer,
+            history: Arc::new(Mutex::new(Vec::new())),
+            history_index: Arc::new(Mutex::new(None)),
         })
     }
 
